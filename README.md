@@ -29,9 +29,9 @@ Run `qufmt -o src/github.com/gavingroovygrover/qutests/sample.go src/github.com/
 
 By making semicolons optional at line ends, Go departs from other C-derivative languages by allowing newlines to determine semantics in some places in the code. It doesn't require the code to have any newlines, though, even though its style guide and `gofmt` utility recommend their use. For the other whitespace, however, Go does require spaces (or tabs) in the syntax to determine semantics.
 
-Qu extends the optionality of newlines to the other whitespace, enabling a Go program to be written without any whitespace. It does so by introducing one small prohibition to Go's syntax: prohibiting the use of Kanji in identifier names. We then use the Kanji as aliases for Go's keywords, special identifiers, and package names in a modified syntax. Because all of the approx 75,000 Kanji available in Unicode has an implied space both before and after it in the Qu grammar, this allows Qu code to be written without any spaces or tabs, as well as newlines.
+Qu extends the optionality of newlines to the other whitespace, enabling a Go program to be written without any whitespace. It does so by introducing one small prohibition to Go's syntax: prohibiting the use of Kanji in identifier names. We then use the Kanji as aliases for Go's keywords, special identifiers, and package names in a modified syntax. Because all of the approx 80,000 Kanji available in Unicode have an implied space both before and after it in the Qu grammar, this allows Qu code to be written without any spaces or tabs, as well as newlines.
 
-As an added bonus, when a program is written using Kanji in all places it's permitted in the code, any of the 25 Go keywords can be used as identifier or label names, so a dedicated Qu programmer doesn't need to know any Go-specific exceptions to code. And the Kanji, unlike other non-Ascii characters like `÷`, `≥`, or `←`, are easily enterable via the many IME's (input method editors) available from China and Japan that ship for free on Linux and Windows.
+As an added bonus, when a program is written using Kanji in all the places it's permitted in the code, any of the 25 Go keywords can be used as identifier or label names, so a dedicated Qu programmer doesn't need to know any Go-specific exceptions to code. And the Kanji, unlike other non-Ascii characters like `÷`, `≥`, or `←`, are easily enterable via the many IME's (input method editors) available for Chinese and Japanese that ship for free on OS's such as Linux and Windows.
 
 
 ## Usage
@@ -124,7 +124,7 @@ We also enable Kanji aliases for package names, and they aren't followed by a do
 
 By remembering a few simple rules, we can easily mix and mingle Go and Qu source code in the same file.
 
-In Go, our 3 categories are identifier are global (the 25 keywords and 39 special identifiers), public (uppercase-initial identifiers), and private (all identifiers beginning with an underscore or lowercase letter, except the 25 keywords).
+In Go, the 3 categories of identifier are global (the 25 keywords and 39 special identifiers), public (uppercase-initial identifiers), and private (all identifiers beginning with an underscore or lowercase letter, except the 25 keywords).
 
 In Qu, our 3 categories of identifier match more intuitively to their lexical class. They are:
 
@@ -143,7 +143,8 @@ One example of an identifier that can't have an underscore in front of it is `ma
 
 This code from "Go by Example":
 
-`package main
+```go
+package main
 
 import (
     "fmt"
@@ -212,11 +213,13 @@ func main() {
 
     opsFinal := atomic.LoadInt64(&ops)
     fmt.Println("ops:", opsFinal)
-}`
+}
+```
 
 can be replaced by the terser:
 
-`包正;入("math/rand";"sync/atomic")
+```go
+包正;入("math/rand";"sync/atomic")
 种readOp构{key整;resp通整} //each line is an example of spaceless programming
 种writeOp构{key整;val整;resp通双}  
 功正(){
@@ -246,7 +249,8 @@ can be replaced by the terser:
     让range:="abc" //added to demo 让: when used with it, Go keywords like "range" can be used as identifiers
     让range="abcdefg"
     opsFinal:=atomic.LoadInt64(&ops)
-    形Println("ops:",opsFinal)}`
+    形Println("ops:",opsFinal)}
+```
 
 
 ## Rationale
