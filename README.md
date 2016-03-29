@@ -10,7 +10,7 @@ Distributed under the same BSD-style license as Go that can be found in the LICE
 
 ### Status
 
-Version 0.1.
+Version 0.2.
 
 All the functionality described below is implemented, though of course it's raw and there's bugs.
 
@@ -29,10 +29,9 @@ Run `qufmt -o src/github.com/gavingroovygrover/qutests/sample.go src/github.com/
 
 By making semicolons optional at line ends, Go departs from other C-derivative languages by allowing newlines to determine semantics in some places in the code. It doesn't require the code to have any newlines, though, even though its style guide and `gofmt` utility recommend their use. For the other whitespace, however, Go does require spaces (or tabs) in the syntax to determine semantics.
 
-Qu extends the optionality of newlines to the other whitespace, enabling a Go program to be written without any whitespace. It does so by introducing one small prohibition to Go's syntax: prohibiting the use of Kanji in identifier names. We then use the Kanji as aliases for Go's keywords, special identifiers, and package names in a modified syntax. Because all of the approx 80,000 Kanji available in Unicode have an implied space both before and after it in the Qu grammar, this allows Qu code to be written without any spaces or tabs, as well as newlines.
+Qu extends the optionality of newlines to the other whitespace, enabling a Go program to be written without any whitespace. It does so by introducing one small prohibition to Go's syntax: prohibiting the use of Kanji in identifier names. We then use the Kanji as aliases for Go's keywords, special identifiers, and package names in a modified syntax. Because all of the approx 80,000 Kanji available in Unicode have an implied space both before and after it in the Qu grammar, this allows Qu code to be written without any spaces or tabs, as well as no newlines.
 
 As an added bonus, when a program is written using Kanji in all the places it's permitted in the code, any of the 25 Go keywords can be used as identifier or label names, so a dedicated Qu programmer doesn't need to know any Go-specific exceptions to code. And the Kanji, unlike other non-Ascii characters like `÷`, `≥`, or `←`, are easily enterable via the many IME's (input method editors) available for Chinese and Japanese that ship for free on OS's such as Linux and Windows.
-
 
 ## Usage
 
@@ -66,7 +65,16 @@ The 25 keywords of Go can be substituted by any of their respective Kanji below:
 * 继 continue
 * 跳 goto
 
-Any of the 25 Go keywords will be treated as an identifier when used within the lexical scope of any Kanji keyword. (This is implemented in Qu 0.1 for 24 keywords, all except for `range`.) To enable this, assignments can be begun with 让, a Kanji best verbalized as `let`, and this style should be the prefered style for Qu programmers.
+Any of the 25 Go keywords will be treated as an identifier when used within the lexical scope of any Kanji keyword. (This is implemented in Qu 0.1 for all 25 keywords.) To enable this, assignments can be begun with 让, a Kanji best verbalized as "let", and this style should be the prefered style for Qu programmers:
+
+```go
+	//added to demo 让:
+    让range:="abc" //when used with 让, Go keywords like "range" can be used as identifiers
+    让range="abcdefg"
+	形Printf("range: %v\n",range)
+```
+
+Qi provides `做`, best verbalized as "do", which can be put at the beginning of any stand-alone block. The only effect is to treat the lexical scope of the block as referencing the protected identifier names during parsing.
 
 The 39 special identifiers in Go can also be substituted by their associated Kanji:
 
@@ -110,6 +118,8 @@ The 39 special identifiers in Go can also be substituted by their associated Kan
 * 写 print
 * 线 println
 
+As well as Go aliases `byte` (`节`) and `rune` (`字`), Qu adds alias `任` for `interface{}`, best verbalized as "any".
+
 We also enable Kanji aliases for package names, and they aren't followed by a dot when used. Only 6 are implemented for now:
 
 * 形 fmt
@@ -139,7 +149,7 @@ Go's private identifiers are inaccessible within Qu code, which generally isn't 
 One example of an identifier that can't have an underscore in front of it is `main`, so we provide the Kanji `正`.
 
 
-## Example
+## Examples
 
 This code from "Go by Example":
 
@@ -246,12 +256,28 @@ can be replaced by the terser:
                atomic.AddInt64(&ops,1)
               }}()}
     时Sleep(时Second) //no dot when Kanji used as package name
-    让range:="abc" //added to demo 让: when used with it, Go keywords like "range" can be used as identifiers
-    让range="abcdefg"
     opsFinal:=atomic.LoadInt64(&ops)
     形Println("ops:",opsFinal)}
 ```
 
+If we shorten the local identifier names, and use semicolon (`;`) to join lines together, we can achieve much greater tersity.
+
+### Protecting special identifiers
+
+Go only has 25 reserved words which can't be used as variables, but all the special identifiers such as `false` can be. The Kanji versions of them can't be redefined:
+
+```go
+package main
+func main() {
+	a:= true
+	b:= 真
+	nil:= true // Qu still allows special identifiers to be used on the left-hand side, ...
+	iota:= 真
+	//假:= true // ... but when the Kanji version is used, e.g. 假 for false,
+	           // generates a parse error "expected non-kanji special identifier on left hand side"
+	形Printf("a: %v, b: %v, nil: %v, iota: %v\n", a, b, nil, iota)
+}
+```
 
 ## Rationale
 

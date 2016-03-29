@@ -1,6 +1,6 @@
-// Copyright 2009 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright 2016 Gavin "Groovy" Grover. All rights reserved.
+// Use of this source code is governed by the same BSD-style
+// license as Go that can be found in the LICENSE file.
 
 package parser_test
 
@@ -21,11 +21,13 @@ func (sw *StringWriter) Write(b []byte) (int, error) {
 }
 
 func TestKanji(t *testing.T) {
-	for src, dst:= range kanjiTests {
+	for i, tst:= range kanjiTests {
+		src:= tst.key
+		dst:= tst.val
 		fset := token.NewFileSet() // positions are relative to fset
 		f, err := parser.ParseFile(fset, "", src, 0)
 		if err != nil {
-			t.Errorf("parse error: %q", err)
+			t.Errorf("parse error in %d: %q", i, err)
 		} else {
 			var conf = types.Config{
 				Importer: importer.Default(),
@@ -37,27 +39,29 @@ func TestKanji(t *testing.T) {
 			}
 			_, err = conf.Check("testing", fset, []*ast.File{f}, &info)
 			if err != nil {
-				t.Errorf("type check error: %q", err)
+				t.Errorf("type check error in %d: %q", i, err)
 			}
 			sw:= StringWriter{""}
 			_= format.Node(&sw, fset, f)
 			if sw.data != dst {
-				t.Errorf("unexpected Go source: received source: %q; expected source: %q", sw.data, dst)
+				t.Errorf("unexpected Go source for %d: received source: %q; expected source: %q", i, sw.data, dst)
+				//t.Errorf("unexpected Go source for %d: received source:\n%s\nexpected source: %q", i, sw.data, dst)
 			}
 		}
 	}
 }
 
-var kanjiTests = map[string]string {
+//var kanjiTests = map[string]string {
+var kanjiTests = map[int]struct{key string; val string} {
 
 // ========== ========== ========== ==========
 //test keywords: 功
 //test keyword scoping: 入
-`
+1:{`
 package main;入"fmt"
 功main(){
   fmt.Printf("Hi!\n") // comment here
-}`:
+}`,
 
 // ---------- ---------- ---------- ----------
 `package main
@@ -67,13 +71,13 @@ import _fmt "fmt"
 func _main() {
 	_fmt.Printf("Hi!\n")
 }
-`,
+`},
 
 // ========== ========== ========== ==========
 //test keyword: 回
 //test keyword scoping: 功
 //test specids: 度,串,整,整64,漂32,漂64,复,复64,复128
-`
+2:{`
 package main;入"fmt";
 功main(){
   fmt.Printf("Len: %d\n", 度(fs("abcdefg")))
@@ -82,7 +86,7 @@ package main;入"fmt";
 功ff(a漂32)漂64{回漂64(a)}
 功fc(a复64)复128{回复128(a)+复(1,1)}
 功fi(a整)整64{回整64(a)}
-`:
+`,
 
 // ---------- ---------- ---------- ----------
 `package main
@@ -96,38 +100,40 @@ func _fs(_a string) string        { return _a + "xyz" }
 func _ff(_a float32) float64      { return float64(_a) }
 func _fc(_a complex64) complex128 { return complex128(_a) + complex(1, 1) }
 func _fi(_a int) int64            { return int64(_a) }
-`,
+`},
 
 // ========== ========== ========== ==========
 //test keyword scoping: 变,如,否
 //test specids: 真,假
-`
+3:{`
 package main;入"fmt"
+import "fmt"
 var n = 50
 变p=70
 变string=170
 功main(){
-  如真{
+  如;真{ //because of bug in Go 1.6 parser in RHS detection, require a ; before using kanji
     fmt.Printf("Len: %d\n", 度("abcdefg") + p)
   }
 }
 func deputy(){
-  if真{
+  if;真{
     fmt.Printf("Len: %d\n", 度("abcdefg") + n)
   }
-  如假{
+  如;假{
     fmt.Printf("Len: %d\n", 度("hijk") + p)
   }否{
     fmt.Printf("Len: %d\n", 度("hi") + p)
   }
   fmt.Printf("Len: %d\n", len("lmnop") + n)
 }
-`:
+`,
 
 // ---------- ---------- ---------- ----------
 `package main
 
 import _fmt "fmt"
+import "fmt"
 
 var n = 50
 var _p = 70
@@ -149,14 +155,15 @@ func deputy() {
 	}
 	fmt.Printf("Len: %d\n", len("lmnop")+n)
 }
-`,
+`},
 
 // ========== ========== ========== ==========
 //test keyword: 构
 //test keyword scoping: 种,久
 //test specids: 整8,整16,整32
-`
+4:{`
 package main
+type _string string
 种A struct{a string; b 整8}
 种B struct{a string; b 整16}
 种C构{a string; b 整32}
@@ -164,11 +171,12 @@ type D struct{a string; b 整32}
 种E构{a串;b整32}
 久a=3.1416
 const b=2.72
-`:
+`,
 
 // ---------- ---------- ---------- ----------
 `package main
 
+type _string string
 type A struct {
 	_a _string
 	_b int8
@@ -192,22 +200,24 @@ type E struct {
 
 const _a = 3.1416
 const b = 2.72
-`,
+`},
 
 // ========== ========== ========== ==========
 //test keywords: 围,为,继,破
 //test keyword scoping: 入,图
 //test specids: 节,字
-`
-package main
+//TODO: fix scoping for 图 and slices/arrays
+5:{`
+package main;入"fmt"
 import "fmt"
 var (
-	a= 图[字]节{'a': 127, 'b': 0, '7':7}
+	_a= 图[字]节{'a': 127, 'b': 0, '7':7}
 	b = byte(7)
 	c= 图[字]节{'a': b} //FIX: want b to become _b
+	d= []节{127, b, 0} //FIX: want d to become _d
 )
 func main(){
-	zx:为i:=0;i<19;i++{
+	_zx:为i:=0;i<19;i++{
 		if i==3 {继}; if i==6{破}
 		如 i== 16{破zx}
 		如 i== 17{继zx}
@@ -221,21 +231,23 @@ func main(){
 		fmt.Print(i, " ")
 	}
 }
-`:
+`,
 
 // ---------- ---------- ---------- ----------
 `package main
 
+import _fmt "fmt"
 import "fmt"
 
 var (
-	a = map[rune]byte{'a': 127, 'b': 0, '7': 7}
-	b = byte(7)
-	c = map[rune]byte{'a': b}
+	_a = map[rune]byte{'a': 127, 'b': 0, '7': 7}
+	b  = byte(7)
+	c  = map[rune]byte{'a': b}
+	d  = []byte{127, b, 0}
 )
 
 func main() {
-zx:
+_zx:
 	for _i := 0; _i < 19; _i++ {
 		if _i == 3 {
 			continue
@@ -265,13 +277,14 @@ zx:
 		fmt.Print(i, " ")
 	}
 }
-`,
+`},
 
 // ========== ========== ========== ==========
 //test keywords: 掉
 //test keyword scoping: 择,事,别,面
 //test specids: 双,空,绝,绝8,绝16,绝32,绝64
-`package main;入"fmt"
+6:{`package main;入"fmt"
+type _uint16 uint16
 type A interface {
   aMeth()绝
 }
@@ -286,7 +299,7 @@ type D面{
 }
 func abc()*双{回空}
 func main(){
-	a:=2
+	_a:=2
 	择a{
 	事1:
 		fmt.Print('a');
@@ -299,13 +312,14 @@ func main(){
 		fmt.Print('d')
 	}
 }
-`:
+`,
 
 // ---------- ---------- ---------- ----------
 `package main
 
 import _fmt "fmt"
 
+type _uint16 uint16
 type A interface {
 	aMeth() uint
 }
@@ -321,7 +335,7 @@ type D interface {
 
 func abc() *bool { return nil }
 func main() {
-	a := 2
+	_a := 2
 	switch _a {
 	case 1:
 		_fmt.Print('a')
@@ -334,202 +348,12 @@ func main() {
 		_fmt.Print('d')
 	}
 }
-`,
+`},
 
 // ========== ========== ========== ==========
 //test keyword scoping: 选,去,通
-`package main
-import (
-    "fmt"
-    "math/rand"
-)
-入("sync/atomic";"time")
-
-type readOp struct {
-    key  int
-    resp 通int
-}
-type writeOp struct {
-    key  int
-    val  int
-    resp chan bool
-}
-func main() {
-    var ops int64 = 0
-
-    reads := make(通*readOp)
-    writes := make(chan *writeOp)
-
-    go func() {
-        var state = make(map[int]int)
-        for {
-            选{
-            case read := <-reads:
-                read.resp <- state[read.key]
-            case write := <-writes:
-                state[write.key] = write.val
-                write.resp <- true
-            }
-        }
-    }()
-
-    for r := 0; r < 100; r++ {
-        去func() {
-            for {
-                read := &readOp{
-                    key:  rand.Intn(5),
-                    resp: make(chan int)}
-                reads <- read
-                <-read.resp
-                atomic.AddInt64(&ops, 1)
-            }
-        }()
-    }
-
-    for w := 0; w < 10; w++ {
-        go func() {
-            for {
-                write := &writeOp{
-                    key:  rand.Intn(5),
-                    val:  rand.Intn(100),
-                    resp: make(chan bool)}
-                writes <- write
-                <-write.resp
-                atomic.AddInt64(&ops, 1)
-            }
-        }()
-    }
-
-    时Sleep(time.Second)
-
-    opsFinal := atomic.LoadInt64(&ops)
-    形Println("ops:", opsFinal)
-    形Println("absolute value:", 数Abs(-7.89))
-}
-`:
-
-// ---------- ---------- ---------- ----------
-`package main
-
-import (
-	"fmt"
-	math "math"
-	"math/rand"
-)
-import (
-	_atomic "sync/atomic"
-	_time "time"
-)
-
-type readOp struct {
-	key  int
-	resp chan _int
-}
-type writeOp struct {
-	key  int
-	val  int
-	resp chan bool
-}
-
-func main() {
-	var ops int64 = 0
-
-	reads := make(chan *_readOp)
-	writes := make(chan *writeOp)
-
-	go func() {
-		var state = make(map[int]int)
-		for {
-			select {
-			case _read := <-_reads:
-				_read._resp <- _state[_read._key]
-			case _write := <-_writes:
-				_state[_write._key] = _write._val
-				_write._resp <- _true
-			}
-		}
-	}()
-
-	for r := 0; r < 100; r++ {
-		go func() {
-			for {
-				_read := &_readOp{
-					_key:  _rand.Intn(5),
-					_resp: _make(chan _int)}
-				_reads <- _read
-				<-_read._resp
-				_atomic.AddInt64(&_ops, 1)
-			}
-		}()
-	}
-
-	for w := 0; w < 10; w++ {
-		go func() {
-			for {
-				write := &writeOp{
-					key:  rand.Intn(5),
-					val:  rand.Intn(100),
-					resp: make(chan bool)}
-				writes <- write
-				<-write.resp
-				atomic.AddInt64(&ops, 1)
-			}
-		}()
-	}
-
-	time.Sleep(time.Second)
-
-	opsFinal := atomic.LoadInt64(&ops)
-	fmt.Println("ops:", opsFinal)
-	fmt.Println("absolute value:", math.Abs(-7.89))
-}
-`,
-
-// ========== ========== ========== ==========
-`
-package main;入"fmt"
-功main(){
-  让b:=7
-  让func:=8
-  fmt.Printf("Hi!\n") // comment here
-}`:
-
-// ---------- ---------- ---------- ----------
-`package main
-
-import _fmt "fmt"
-
-func _main() {
-	_b := 7
-	_func := 8
-	_fmt.Printf("Hi!\n")
-}
-`,
-
-// ========== ========== ========== ==========
-//test keyword scoping: 包
-`
-包main;入"fmt"
-功main(){
-  让b:=7
-  让func:=8
-  fmt.Printf("Hi!\n") // different comment here
-}`:
-
-// ---------- ---------- ---------- ----------
-`package main
-
-import _fmt "fmt"
-
-func _main() {
-	_b := 7
-	_func := 8
-	_fmt.Printf("Hi!\n")
-}
-`,
-
-// ========== ========== ========== ==========
-`包正;入("math/rand";"sync/atomic")
+//test special identifier: 正
+7:{`包正;入("math/rand";"sync/atomic")
 种readOp构{key整;resp通整}
 种writeOp构{key整;val整;resp通双}
 功正(){
@@ -555,16 +379,86 @@ func _main() {
                <-write.resp
                atomic.AddInt64(&ops,1)
               }}()}
-    时Sleep(time.Second)
+    时Sleep(时Second)
     opsFinal:=atomic.LoadInt64(&ops)
-    形Println("ops:",opsFinal)}
-`:
+    形Println("ops:",opsFinal)
+
+    让range:="abc" //when used with 让, Go keywords like "range" can be used as identifiers
+    让range="abcdefg"
+	形Printf("range: %v\n",range)
+}
+`,
 
 // ---------- ---------- ---------- ----------
-"package main\n\nimport (\n\tfmt \"fmt\"\n\t_rand \"math/rand\"\n\t_atomic \"sync/atomic\"\n\ttime \"time\"\n)\n\ntype _readOp struct {\n\t_key  int\n\t_resp chan int\n}\ntype _writeOp struct {\n\t_key  int\n\t_val  int\n\t_resp chan bool\n}\n\nfunc main() {\n\tvar _ops int64 = 0\n\t_reads := make(chan *_readOp)\n\t_writes := make(chan *_writeOp)\n\tgo func() {\n\t\tvar _state = make(map[int]int)\n\t\tfor {\n\t\t\tselect {\n\t\t\tcase _read := <-_reads:\n\t\t\t\t_read._resp <- _state[_read._key]\n\t\t\tcase _write := <-_writes:\n\t\t\t\t_state[_write._key] = _write._val\n\t\t\t\t_write._resp <- true\n\t\t\t}\n\t\t}\n\t}()\n\tfor _r := 0; _r < 100; _r++ {\n\t\tgo func() {\n\t\t\tfor {\n\t\t\t\t_read := &_readOp{_key: _rand.Intn(5), _resp: make(chan int)}\n\t\t\t\t_reads <- _read\n\t\t\t\t<-_read._resp\n\t\t\t\t_atomic.AddInt64(&_ops, 1)\n\t\t\t}\n\t\t}()\n\t}\n\tfor _w := 0; _w < 10; _w++ {\n\t\tgo func() {\n\t\t\tfor {\n\t\t\t\t_write := &_writeOp{_key: _rand.Intn(5), _val: _rand.Intn(100), _resp: make(chan bool)}\n\t\t\t\t_writes <- _write\n\t\t\t\t<-_write._resp\n\t\t\t\t_atomic.AddInt64(&_ops, 1)\n\t\t\t}\n\t\t}()\n\t}\n\ttime.Sleep(_time.Second)\n\t_opsFinal := _atomic.LoadInt64(&_ops)\n\tfmt.Println(\"ops:\", _opsFinal)\n}\n",
+`package main
+
+import (
+	fmt "fmt"
+	_rand "math/rand"
+	_atomic "sync/atomic"
+	time "time"
+)
+
+type _readOp struct {
+	_key  int
+	_resp chan int
+}
+type _writeOp struct {
+	_key  int
+	_val  int
+	_resp chan bool
+}
+
+func main() {
+	var _ops int64 = 0
+	_reads := make(chan *_readOp)
+	_writes := make(chan *_writeOp)
+	go func() {
+		var _state = make(map[int]int)
+		for {
+			select {
+			case _read := <-_reads:
+				_read._resp <- _state[_read._key]
+			case _write := <-_writes:
+				_state[_write._key] = _write._val
+				_write._resp <- true
+			}
+		}
+	}()
+	for _r := 0; _r < 100; _r++ {
+		go func() {
+			for {
+				_read := &_readOp{_key: _rand.Intn(5), _resp: make(chan int)}
+				_reads <- _read
+				<-_read._resp
+				_atomic.AddInt64(&_ops, 1)
+			}
+		}()
+	}
+	for _w := 0; _w < 10; _w++ {
+		go func() {
+			for {
+				_write := &_writeOp{_key: _rand.Intn(5), _val: _rand.Intn(100), _resp: make(chan bool)}
+				_writes <- _write
+				<-_write._resp
+				_atomic.AddInt64(&_ops, 1)
+			}
+		}()
+	}
+	time.Sleep(time.Second)
+	_opsFinal := _atomic.LoadInt64(&_ops)
+	fmt.Println("ops:", _opsFinal)
+
+	_range := "abc"
+	_range = "abcdefg"
+	fmt.Printf("range: %v\n", _range)
+}
+`},
 
 // ========== ========== ========== ==========
-`package main
+//test keyword scoping: 围
+//test special keyword: 做
+8:{`package main
 
 import (
 	"fmt"
@@ -580,25 +474,29 @@ func main() {
 
 	fset := token.NewFileSet() // positions are relative to fset
 
-	//f, err := parser.ParseFile(fset, "src/github.com/gavingroovygrover/qu/first.go", nil, parser.ImportsOnly)
-	//f, err := parser.ParseFile(fset, "", src, parser.ImportsOnly)
-	f, err := parser.ParseFile(fset, "", src, 0)
+	//_f, err := parser.ParseFile(fset, "src/github.com/gavingroovygrover/qu/first.go", nil, parser.ImportsOnly)
+	//_f, err := parser.ParseFile(fset, "", src, parser.ImportsOnly)
+	_f, err := parser.ParseFile(fset, "", src, 0)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	for _, s := range f.Imports {
+	for _, s := 围 f.Imports {
 		fmt.Println(s.Path.Value)
 	}
 
-	//ast.Print(fset, f)
-	//_= format.Node(os.Stdout, fset, f)
+	//ast.Print(fset, _f)
+	//_= format.Node(os.Stdout, fset, _f)
 
-	sw:= StringWriter{""}
-	_= format.Node(&sw, fset, f)
-	fmt.Println(sw.data)
-	fmt.Println(sw.data == dst)
+	{	sw:= StringWriter{""}
+		_= format.Node(&sw, fset, _f)
+		fmt.Println(sw.data)
+		fmt.Println(sw.data == dst)
+	}
+	做{ abc:= "abc"
+		_ = abc
+	}
 }
 
 type StringWriter struct{ data string }
@@ -607,31 +505,164 @@ func (sw *StringWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-var src string = "package main"`:
+var src string = "package main"
+var dst string = "package main"`,
 
 // ---------- ---------- ---------- ----------
-"",
+`package main
+
+import (
+	"fmt"
+	"github.com/gavingroovygrover/qu/parser"
+	"go/format"
+	"go/token"
+)
+
+func main() {
+	fmt.Printf("Hi!\n")
+
+	fset := token.NewFileSet()
+
+	_f, err := parser.ParseFile(fset, "", src, 0)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	for _, s := range _f.Imports {
+		fmt.Println(s.Path.Value)
+	}
+
+	{
+		sw := StringWriter{""}
+		_ = format.Node(&sw, fset, _f)
+		fmt.Println(sw.data)
+		fmt.Println(sw.data == dst)
+	}
+	{
+		_abc := "abc"
+		_ = _abc
+	}
+}
+
+type StringWriter struct{ data string }
+
+func (sw *StringWriter) Write(b []byte) (int, error) {
+	sw.data += string(b)
+	return len(b), nil
+}
+
+var src string = "package main"
+var dst string = "package main"
+`},
+
+// ========== ========== ========== ==========
+//test keyword scoping: 包
+//test special keywords: 让,任
+//test using keyword as id in kanji-context (both LHS and RHS)
+9:{`
+package main;入"fmt"
+import "fmt"
+功main(){
+  让b:=7
+  让func:=8
+  fmt.Printf("Hi, nos.%s and %s!\n", b, func)
+}
+func baba(){
+  变b任= 17
+  fmt.Printf("Hi, no.%s!\n", _b)
+}`,
+
+// ---------- ---------- ---------- ----------
+`package main
+
+import _fmt "fmt"
+import "fmt"
+
+func _main() {
+	_b := 7
+	_func := 8
+	_fmt.Printf("Hi, nos.%s and %s!\n", _b, _func)
+}
+func baba() {
+	var _b interface{} = 17
+	fmt.Printf("Hi, no.%s!\n", _b)
+}
+`},
+
+// ========== ========== ========== ==========
+10:{`
+包main;入"fmt"
+功main(){
+  让b:=7
+  让func:=8
+  fmt.Printf("Hi, nos.%s and %s!\n", b, func) // different comment here
+}`,
+
+// ---------- ---------- ---------- ----------
+`package main
+
+import _fmt "fmt"
+
+func _main() {
+	_b := 7
+	_func := 8
+	_fmt.Printf("Hi, nos.%s and %s!\n", _b, _func)
+}
+`},
+
+// ========== ========== ========== ==========
+//test prohibited kanji use on LHS
+11:{`package main
+func main() {
+	a:= true
+	b:= 真
+	nil:= true
+	iota:= 真
+	//假:= true //this generates parse error "expected non-kanji special identifier on left hand side"
+	形Printf("a: %v, b: %v, nil: %v, iota: %v\n", a, b, nil, iota)
+}
+`,
+
+// ---------- ---------- ---------- ----------
+`package main
+
+import fmt "fmt"
+
+func main() {
+	a := true
+	b := true
+	nil := true
+	iota := true
+
+	fmt.Printf("a: %v, b: %v, nil: %v, iota: %v\n", a, b, nil, iota)
+}
+`},
+
+// ========== ========== ========== ==========
+999:{`
+package main
+`,
+
+// ---------- ---------- ---------- ----------
+`package main
+`},
 
 // ========== ========== ========== ==========
 }
 /*
-more tests: 让
+more tests: 让做任
 more keyword scoping tests: 包
-test more default packages: 数,大,网,序,形
+test more default packages: 数,大,网,序
 to test keyword scoping: 为,终,回,破,继,跳,构
+fix keyword scoping: 图,slices
 convert to specid scoping: all except 真,假,空,毫
 to test specids: 能,实,虚,造,新,关,加,副,删,丢,抓,写,线,毫,镇,错
-convert to keyword scoping: 围
-fix keyword scoping: 图
-aliases: 任
 fix error where pre-existing imports aren't re-added with different name
-----------
-test keywords as ids and labels in kanji-context
+test keywords as labels in kanji-context
 test blank: _
-pseudo-keywords: 这正
-----------
-plug into qu/tools
-write doco
-release
+pseudo-keywords: 这 for curr pkg
+enable backslashed kanji in identifiers, and use 我
+put in kanji on imports, and on declared packages, and use 特
 */
 

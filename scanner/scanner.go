@@ -85,39 +85,6 @@ func (s *Scanner) next() {
 	}
 }
 
-var kanjiLookup = map[rune]string{
-	//keywords...
-	'包': "package",
-	'入': "import",
-	'变': "var",
-	'久': "const",
-	'种': "type",
-
-	'功': "func",
-	'掉': "fallthrough",
-	'跳': "goto",
-	'为': "for",
-	'如': "if",
-
-	'回': "return",
-	'破': "break",
-	'继': "continue",
-	'终': "defer",
-	'择': "switch",
-
-	'去': "go",
-	'选': "select",
-	'围': "range",
-	'否': "else",
-	'事': "case",
-
-	'别': "default",
-	'图': "map",
-	'构': "struct",
-	'面': "interface",
-	'通': "chan",
-}
-
 // A mode value is a set of flags (or 0).
 // They control scanner behavior.
 //
@@ -671,50 +638,41 @@ scanAgain:
 
 	case isKanjiLetter(ch):
 		u:= s.scanKanji()
-		w:= kanjiLookup[u]
+		w:= ""
+		if ku:= Kanjis[u]; ku.Kind == KeywordKanji && ku.IsGoReserved {
+			w = ku.Word
+		}
+
 		lit = string(u)
-		if w != "" {
+		if w != "" { // Go-reserved keyword
 			tok = token.Lookup(w)
 			switch tok {
 			case token.IDENT, token.BREAK, token.CONTINUE, token.FALLTHROUGH, token.RETURN:
 				insertSemi = true
 			}
 
-		} else if u == '整' || u == '绝' {
+		} else if ku:= Kanjis[u]; ku.IsSuffixable { // suffixable special identifier
 			tok = token.IDENT
-			if s.ch == '8' || s.ch == '1' || s.ch == '3' || s.ch == '6' {
-				t, l := s.scanNumber(false)
-				if t == token.INT && ( l == "8" || l == "16" || l == "32" || l == "64" ) {
+			switch u {
+			case '整', '绝':
+				if s.ch == '8' || s.ch == '1' || s.ch == '3' || s.ch == '6' {
+					_, l := s.scanNumber(false) // _ == token.INT && ( l == "8" || l == "16" || l == "32" || l == "64" )
 					lit += l
-				} else { // should never reach here
 				}
-			}
-		} else if u == '漂' {
-			if s.ch == '3' || s.ch == '6' {
-				tok = token.IDENT
-				t, l := s.scanNumber(false)
-				if t == token.INT && ( l == "32" || l == "64" ) {
+			case '漂':
+				_, l := s.scanNumber(false) // _ == token.INT && ( l == "32" || l == "64" )
+				lit += l
+			case '复':
+				if s.ch == '6' || s.ch == '1' {
+					_, l := s.scanNumber(false) // _ == token.INT && ( l == "64" || l == "128" )
 					lit += l
-				} else { // should never reach here
-				}
-			} else { // should never reach here
-			}
-		} else if u == '复' {
-			tok = token.IDENT
-			if s.ch == '6' || s.ch == '1' {
-				t, l := s.scanNumber(false)
-				if t == token.INT && ( l == "64" || l == "128" ) {
-					lit += l
-				} else { // should never reach here
 				}
 			}
 
-		} else { // not a keyword or special identifier; should never reach here for now
+		} else { // other Kanji, e.g. package name, non-suffixable special identifier
 			insertSemi = true
 			tok = token.IDENT
 		}
-
-//fmt.Print(lit, " ")
 
 	case '0' <= ch && ch <= '9':
 		insertSemi = true
