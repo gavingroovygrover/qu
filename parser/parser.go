@@ -74,9 +74,13 @@ type parser struct {
 	targetStack [][]*ast.Ident // stack of unresolved labels
 
 	// Additions to parser state for Kanji processing
-	kanjiMode      bool // tracks lexically scoped Kanji-mode
-	isInserted     bool // has a token been inserted into the stream inside the parser?
-	kanjiImports   []*ast.ImportSpec // list of imports found during parsing
+	isInserted          bool // has a token been inserted into the stream inside the parser?
+
+	kanjiMode           bool // tracks lexically scoped Kanji-mode
+	kanjiOnLhs          string // tracks Kanji identifiers on left hand side
+	kanjiImports        []*ast.ImportSpec // list of imports found during parsing
+	kanjiImportAliases  map[rune]string // map of kanji aliases in import header
+	prevIdentIsKanji    bool // whether previous ident was kanji
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -91,6 +95,8 @@ func (p *parser) init(fset *token.FileSet, filename string, src []byte, mode Mod
 
 	p.mode = mode
 	p.trace = mode&Trace != 0 // for convenience (p.trace is used frequently)
+
+	p.kanjiImportAliases = map[rune]string{}
 
 	p.next()
 }
@@ -283,7 +289,8 @@ func (p *parser) next0() {
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-// insertToken inserts a token into the token stream.
+// insertToken inserts a token into the token stream, keeping the line
+// position the same.
 func (p *parser) insertToken(tok token.Token, lit string) {
 	p.tok, p.lit, p.isInserted = tok, lit, true
 }
@@ -580,32 +587,61 @@ func (p *parser) parseIdent() *ast.Ident {
 	name := "_"
 	if p.tok == token.IDENT {
 		name = p.lit
-		n, _:= utf8.DecodeRune([]byte(name))
+		p.prevIdentIsKanji = true
+
+		r, _:= utf8.DecodeRune([]byte(name))
+		kan:= scanner.Kanjis[r]
 		idLookup:= ""
-		if kn:= scanner.Kanjis[n]; kn.Kind == scanner.IdentifierKanji && ! kn.IsSuffixable {
-			idLookup = kn.Word
-		} else if kn:= scanner.SuffixedIdents[name]; kn != "" {
-			idLookup = kn
-		}
 		pkgLookup:= ""
-		if kn:= scanner.Kanjis[n]; kn.Kind == scanner.PackageKanji {
-			pkgLookup = kn.Word
+		pkgAlias:= ""
+		if kan.Kind == scanner.IdentifierKanji && ! kan.IsSuffixable {
+			idLookup = kan.Word
+		} else if kan.Kind == scanner.PackageKanji {
+			pkgLookup = kan.Word
+		} else if ss:= p.kanjiImportAliases[r]; ss != "" {
+			pkgAlias = ss
+		} else if k:= scanner.SuffixedIdents[name]; k != "" {
+			idLookup = k
+		} else {
+			p.prevIdentIsKanji = false
 		}
-		if ! unicode.IsUpper(n) {
-			if idLookup == "" && pkgLookup == "" && p.kanjiMode && name != "_" {
-				name = "_" + name
-			} else if idLookup == "" && pkgLookup != "" {
-				name = filepath.Base(pkgLookup[:])
-				p.kanjiImports = append(p.kanjiImports, &ast.ImportSpec{
-					Name: &ast.Ident{NamePos: p.pos, Name: name},
-					Path: &ast.BasicLit{ValuePos: p.pos, Kind: token.STRING, Value: pkgLookup},
-				})
-				p.insertToken(token.PERIOD, ".")
-			} else if idLookup != "" {
-				name = idLookup
-			}
+		if pkgLookup != "" {
+			name = filepath.Base(pkgLookup[:])
+			p.kanjiImports = append(p.kanjiImports, &ast.ImportSpec{
+				Name: &ast.Ident{NamePos: p.pos, Name: name},
+				Path: &ast.BasicLit{ValuePos: p.pos, Kind: token.STRING, Value: pkgLookup},
+			})
+			p.insertToken(token.PERIOD, ".")
+		} else if idLookup != "" {
+			p.kanjiOnLhs = p.lit
+			name = idLookup
+		} else if pkgAlias != "" {
+			name = pkgAlias
+			p.insertToken(token.PERIOD, ".")
+		} else if p.kanjiMode && ! unicode.IsUpper(r) && name != "_" {
+			name = "_" + name
 		}
+
 		p.next()
+	} else {
+		p.expect(token.IDENT) // use expect() error handling
+	}
+	return &ast.Ident{NamePos: pos, Name: name}
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+func (p *parser) parseNonkanjiIdent() *ast.Ident {
+	pos := p.pos
+	name := "_"
+
+	if p.tok == token.IDENT {
+		name = p.lit
+		r, _:= utf8.DecodeRune([]byte(name))
+		if unicode.IsLetter(r) && unicode.In(r, unicode.Han) {
+			p.errorExpected(pos, "Non-kanji identifier")
+		} else {
+			p.next()
+		}
 	} else {
 		p.expect(token.IDENT) // use expect() error handling
 	}
@@ -616,6 +652,21 @@ func (p *parser) parseIdent() *ast.Ident {
 func (p *parser) parseIdentList() (list []*ast.Ident) {
 	if p.trace {
 		defer un(trace(p, "IdentList"))
+	}
+
+	list = append(list, p.parseIdent())
+	for p.tok == token.COMMA {
+		p.next()
+		list = append(list, p.parseIdent())
+	}
+
+	return
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+func (p *parser) parseNonkanjiIdentList() (list []*ast.Ident) {
+	if p.trace {
+		defer un(trace(p, "NonkanjiIdentList"))
 	}
 
 	list = append(list, p.parseIdent())
@@ -714,8 +765,35 @@ func (p *parser) parseRhsList() []ast.Expr {
 	return list
 }
 
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+func (p *parser) parseRhs() ast.Expr {
+	old := p.inRhs
+	p.inRhs = true
+	x := p.checkExpr(p.parseExpr(false))
+	p.inRhs = old
+	return x
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+func (p *parser) parseRhsOrType() ast.Expr {
+	old := p.inRhs
+	p.inRhs = true
+	x := p.checkExprOrType(p.parseExpr(false))
+	p.inRhs = old
+	return x
+}
+
 // ----------------------------------------------------------------------------
 // Types
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+func (p *parser) tryType() ast.Expr {
+	typ := p.tryIdentOrType()
+	if typ != nil {
+		p.resolve(typ)
+	}
+	return typ
+}
+
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 func (p *parser) parseType() ast.Expr {
 	if p.trace {
@@ -739,6 +817,11 @@ func (p *parser) parseType() ast.Expr {
 func (p *parser) parseTypeName() ast.Expr {
 	if p.trace {
 		defer un(trace(p, "TypeName"))
+	}
+
+	if p.tok == token.IDENT && p.lit == "这" {
+		p.next()
+		return p.parseIdent()
 	}
 
 	ident, alias := p.parseIdentOrAlias()
@@ -796,6 +879,37 @@ func (p *parser) makeIdentList(list []ast.Expr) []*ast.Ident {
 		idents[i] = ident
 	}
 	return idents
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// If the result is an identifier, it is not resolved.
+func (p *parser) tryVarType(isParam bool) ast.Expr {
+	if isParam && p.tok == token.ELLIPSIS {
+		pos := p.pos
+		p.next()
+		typ := p.tryIdentOrType() // don't use parseType so we can provide better error message
+		if typ != nil {
+			p.resolve(typ)
+		} else {
+			p.error(pos, "'...' parameter is missing type")
+			typ = &ast.BadExpr{From: pos, To: p.pos}
+		}
+		return &ast.Ellipsis{Ellipsis: pos, Elt: typ}
+	}
+	return p.tryIdentOrType()
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// If the result is an identifier, it is not resolved.
+func (p *parser) parseVarType(isParam bool) ast.Expr {
+	typ := p.tryVarType(isParam)
+	if typ == nil {
+		pos := p.pos
+		p.errorExpected(pos, "type")
+		p.next() // make progress
+		typ = &ast.BadExpr{From: pos, To: p.pos}
+	}
+	return typ
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -896,37 +1010,6 @@ func (p *parser) parsePointerType() *ast.StarExpr {
 	base := p.parseType()
 
 	return &ast.StarExpr{Star: star, X: base}
-}
-
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-// If the result is an identifier, it is not resolved.
-func (p *parser) tryVarType(isParam bool) ast.Expr {
-	if isParam && p.tok == token.ELLIPSIS {
-		pos := p.pos
-		p.next()
-		typ := p.tryIdentOrType() // don't use parseType so we can provide better error message
-		if typ != nil {
-			p.resolve(typ)
-		} else {
-			p.error(pos, "'...' parameter is missing type")
-			typ = &ast.BadExpr{From: pos, To: p.pos}
-		}
-		return &ast.Ellipsis{Ellipsis: pos, Elt: typ}
-	}
-	return p.tryIdentOrType()
-}
-
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-// If the result is an identifier, it is not resolved.
-func (p *parser) parseVarType(isParam bool) ast.Expr {
-	typ := p.tryVarType(isParam)
-	if typ == nil {
-		pos := p.pos
-		p.errorExpected(pos, "type")
-		p.next() // make progress
-		typ = &ast.BadExpr{From: pos, To: p.pos}
-	}
-	return typ
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1043,9 +1126,25 @@ func (p *parser) parseFuncType() (*ast.FuncType, *ast.Scope) {
 		defer un(trace(p, "FuncType"))
 	}
 
+	var kanjiFuncKeyword bool
+	if p.lit == "功" {
+		kanjiFuncKeyword = true
+	}
+	oldKanjiMode := p.kanjiMode
+	if p.lit == "功" && ! oldKanjiMode {
+		p.kanjiMode = true
+	}
+
 	pos := p.expect(token.FUNC)
 	scope := ast.NewScope(p.topScope) // function scope
 	params, results := p.parseSignature(scope)
+
+	p.kanjiMode = oldKanjiMode
+	if kanjiFuncKeyword {
+		p.prevIdentIsKanji = true
+	} else {
+		p.prevIdentIsKanji = false
+	}
 
 	return &ast.FuncType{Func: pos, Params: params, Results: results}, scope
 }
@@ -1116,6 +1215,10 @@ func (p *parser) parseMapType() *ast.MapType {
 		defer un(trace(p, "MapType"))
 	}
 
+	var kanjiMapKeyword bool
+	if p.lit == "图" {
+		kanjiMapKeyword = true
+	}
 	oldKanjiMode:= p.kanjiMode
 	if p.lit == "图" && ! oldKanjiMode {
 		p.kanjiMode = true
@@ -1128,6 +1231,11 @@ func (p *parser) parseMapType() *ast.MapType {
 
 	value := p.parseType()
 	p.kanjiMode= oldKanjiMode
+	if kanjiMapKeyword {
+		p.prevIdentIsKanji = true
+	} else {
+		p.prevIdentIsKanji = false
+	}
 
 	return &ast.MapType{Map: pos, Key: key, Value: value}
 }
@@ -1201,15 +1309,6 @@ func (p *parser) tryIdentOrType() ast.Expr {
 	return nil
 }
 
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-func (p *parser) tryType() ast.Expr {
-	typ := p.tryIdentOrType()
-	if typ != nil {
-		p.resolve(typ)
-	}
-	return typ
-}
-
 // ----------------------------------------------------------------------------
 // Blocks
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1271,9 +1370,17 @@ func (p *parser) parseFuncTypeOrLit() ast.Expr {
 		return typ
 	}
 
+	oldKanjiMode:= p.kanjiMode
+	if p.prevIdentIsKanji && ! oldKanjiMode {
+		p.kanjiMode = true
+		p.prevIdentIsKanji = false
+	}
+
 	p.exprLev++
 	body := p.parseBody(scope)
 	p.exprLev--
+
+	p.kanjiMode = oldKanjiMode
 
 	return &ast.FuncLit{Type: typ, Body: body}
 }
@@ -1363,6 +1470,7 @@ func (p *parser) parseIndexOrSlice(x ast.Expr) ast.Expr {
 	if p.trace {
 		defer un(trace(p, "IndexOrSlice"))
 	}
+	oldKanjiOnLhs:= p.kanjiOnLhs
 
 	const N = 3 // change the 3 to 2 to disable 3-index slices
 	lbrack := p.expect(token.LBRACK)
@@ -1400,9 +1508,11 @@ func (p *parser) parseIndexOrSlice(x ast.Expr) ast.Expr {
 				index[2] = &ast.BadExpr{From: colons[1] + 1, To: rbrack}
 			}
 		}
+		p.kanjiOnLhs = oldKanjiOnLhs
 		return &ast.SliceExpr{X: x, Lbrack: lbrack, Low: index[0], High: index[1], Max: index[2], Slice3: slice3, Rbrack: rbrack}
 	}
 
+	p.kanjiOnLhs = oldKanjiOnLhs
 	return &ast.IndexExpr{X: x, Lbrack: lbrack, Index: index[0], Rbrack: rbrack}
 }
 
@@ -1412,6 +1522,11 @@ func (p *parser) parseCallOrConversion(fun ast.Expr) *ast.CallExpr {
 		defer un(trace(p, "CallOrConversion"))
 	}
 
+	oldKanjiMode:= p.kanjiMode
+	if p.prevIdentIsKanji && ! oldKanjiMode {
+		p.kanjiMode = true
+		p.prevIdentIsKanji = false
+	}
 	lparen := p.expect(token.LPAREN)
 	p.exprLev++
 	var list []ast.Expr
@@ -1429,6 +1544,7 @@ func (p *parser) parseCallOrConversion(fun ast.Expr) *ast.CallExpr {
 	}
 	p.exprLev--
 	rparen := p.expectClosing(token.RPAREN, "argument list")
+	p.kanjiMode = oldKanjiMode
 
 	return &ast.CallExpr{Fun: fun, Lparen: lparen, Args: list, Ellipsis: ellipsis, Rparen: rparen}
 }
@@ -1515,6 +1631,12 @@ func (p *parser) parseLiteralValue(typ ast.Expr) ast.Expr {
 		defer un(trace(p, "LiteralValue"))
 	}
 
+	oldKanjiMode:= p.kanjiMode
+	if p.prevIdentIsKanji && ! oldKanjiMode {
+		p.kanjiMode = true
+		p.prevIdentIsKanji = false
+	}
+
 	lbrace := p.expect(token.LBRACE)
 	var elts []ast.Expr
 	p.exprLev++
@@ -1523,6 +1645,9 @@ func (p *parser) parseLiteralValue(typ ast.Expr) ast.Expr {
 	}
 	p.exprLev--
 	rbrace := p.expectClosing(token.RBRACE, "composite literal")
+
+	p.kanjiMode = oldKanjiMode
+
 	return &ast.CompositeLit{Type: typ, Lbrace: lbrace, Elts: elts, Rbrace: rbrace}
 }
 
@@ -1802,12 +1927,12 @@ func (p *parser) parseExpr(lhs bool) ast.Expr {
 		defer un(trace(p, "Expression"))
 	}
 
-	if r, _:= utf8.DecodeRune([]byte(p.lit)); lhs && scanner.Kanjis[r].Kind == scanner.IdentifierKanji {
+	/*if r, _:= utf8.DecodeRune([]byte(p.lit)); lhs && scanner.Kanjis[r].Kind == scanner.IdentifierKanji {
 		pos := p.pos
 		p.errorExpected(pos, "non-kanji special identifier on left hand side")
 		p.next()
 		return &ast.BadExpr{From: pos, To: p.pos}
-	}
+	}*/
 
 	if p.kanjiMode && p.tok.IsKeyword() {
 		r, _:= utf8.DecodeRune([]byte(p.lit))
@@ -1817,24 +1942,6 @@ func (p *parser) parseExpr(lhs bool) ast.Expr {
 	}
 
 	return p.parseBinaryExpr(lhs, token.LowestPrec+1)
-}
-
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-func (p *parser) parseRhs() ast.Expr {
-	old := p.inRhs
-	p.inRhs = true
-	x := p.checkExpr(p.parseExpr(false))
-	p.inRhs = old
-	return x
-}
-
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-func (p *parser) parseRhsOrType() ast.Expr {
-	old := p.inRhs
-	p.inRhs = true
-	x := p.checkExprOrType(p.parseExpr(false))
-	p.inRhs = old
-	return x
 }
 
 // ----------------------------------------------------------------------------
@@ -1857,6 +1964,7 @@ func (p *parser) parseSimpleStmt(mode int) (ast.Stmt, bool) {
 		defer un(trace(p, "SimpleStmt"))
 	}
 
+	p.kanjiOnLhs = ""
 	x := p.parseLhsList()
 
 	switch p.tok {
@@ -1867,6 +1975,11 @@ func (p *parser) parseSimpleStmt(mode int) (ast.Stmt, bool) {
 		token.XOR_ASSIGN, token.SHL_ASSIGN, token.SHR_ASSIGN, token.AND_NOT_ASSIGN:
 		// assignment statement, possibly part of a range clause
 		pos, tok := p.pos, p.tok
+		if p.kanjiOnLhs != "" {
+			p.error(pos, "non-kanji special identifier " + p.kanjiOnLhs + " on left hand side")
+			p.next()
+			return &ast.BadStmt{From: pos, To: p.pos}, false
+		}
 		p.next()
 		var y []ast.Expr
 		isRange := false
@@ -1919,6 +2032,11 @@ func (p *parser) parseSimpleStmt(mode int) (ast.Stmt, bool) {
 
 	case token.ARROW:
 		// send statement
+		if p.kanjiOnLhs != "" {
+			p.error(p.pos, "non-kanji special identifier " + p.kanjiOnLhs + " on left hand side")
+			p.next()
+			return &ast.BadStmt{From: p.pos, To: p.pos}, false
+		}
 		arrow := p.pos
 		p.next()
 		y := p.parseRhs()
@@ -1926,6 +2044,11 @@ func (p *parser) parseSimpleStmt(mode int) (ast.Stmt, bool) {
 
 	case token.INC, token.DEC:
 		// increment or decrement
+		if p.kanjiOnLhs != "" {
+			p.error(p.pos, "non-kanji special identifier " + p.kanjiOnLhs + " on left hand side")
+			p.next()
+			return &ast.BadStmt{From: p.pos, To: p.pos}, false
+		}
 		s := &ast.IncDecStmt{X: x[0], TokPos: p.pos, Tok: p.tok}
 		p.next()
 		return s, false
@@ -2470,6 +2593,15 @@ func (p *parser) parseStmt() (s ast.Stmt) {
 			s = p.parseBlockStmt()
 			p.kanjiMode = oldKanjiMode
 
+		} else if p.tok == token.IDENT && p.lit == "英" {
+			oldKanjiMode:= p.kanjiMode
+			if oldKanjiMode {
+				p.kanjiMode = false
+			}
+			p.next()
+			s = p.parseBlockStmt()
+			p.kanjiMode = oldKanjiMode
+
 		} else {
 			s, _ = p.parseSimpleStmt(labelOk)
 		}
@@ -2542,6 +2674,20 @@ func (p *parser) parseImportSpec(doc *ast.CommentGroup, _ token.Token, _ int) as
 		defer un(trace(p, "ImportSpec"))
 	}
 
+	var aliases = []rune{}
+	outer: for r, _:= utf8.DecodeRune([]byte(p.lit));
+			p.tok == token.IDENT && r >= 0x80 && unicode.IsLetter(r) && unicode.In(r, unicode.Han);
+			r, _= utf8.DecodeRune([]byte(p.lit)) {
+		for _, n:= range scanner.KouRadicalChars {
+			if r == n {
+				aliases = append(aliases, r)
+				p.next()
+				continue outer
+			}
+		}
+		p.error(p.pos, "unexpected kanji: " + p.lit)
+	}
+
 	var ident *ast.Ident
 	oldPos := p.pos
 	switch p.tok {
@@ -2563,6 +2709,15 @@ func (p *parser) parseImportSpec(doc *ast.CommentGroup, _ token.Token, _ int) as
 		if p.kanjiMode && ident == nil {
 			ident = &ast.Ident{NamePos: oldPos, Name: "_" + filepath.Base(path[1:len(path)-1])}
 		}
+
+		for _, a:= range aliases {
+			if ident == nil || ident.Name == "" {
+				p.kanjiImportAliases[a] = filepath.Base(path[1:len(path)-1])
+			} else {
+				p.kanjiImportAliases[a] = ident.Name
+			}
+		}
+
 		p.next()
 	} else {
 		p.expect(token.STRING) // use expect() error handling
@@ -2588,7 +2743,10 @@ func (p *parser) parseValueSpec(doc *ast.CommentGroup, keyword token.Token, iota
 	}
 
 	pos := p.pos
+
+	//ident := p.parseNonkanjiIdentList() //TODO: Kanji not allowed
 	idents := p.parseIdentList()
+
 	typ := p.tryType()
 	var values []ast.Expr
 	// always permit optional initialization for more tolerant parsing
@@ -2635,6 +2793,7 @@ func (p *parser) parseTypeSpec(doc *ast.CommentGroup, _ token.Token, _ int) ast.
 		defer un(trace(p, "TypeSpec"))
 	}
 
+	//ident := p.parseNonkanjiIdent() //TODO: Kanji not allowed
 	ident := p.parseIdent()
 
 	// Go spec: The scope of a type identifier declared inside a function begins
@@ -2706,6 +2865,7 @@ func (p *parser) parseFuncDecl() *ast.FuncDecl {
 		recv = p.parseParameters(scope, false)
 	}
 
+	//ident := p.parseNonkanjiIdent() //TODO: Kanji not allowed
 	ident := p.parseIdent()
 
 	params, results := p.parseSignature(scope)

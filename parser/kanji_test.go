@@ -12,8 +12,10 @@ import (
 	"go/ast"
 	"go/importer"
 	"testing"
+	"fmt"
 )
 
+//================================================================================================================================================================
 type StringWriter struct{ data string }
 func (sw *StringWriter) Write(b []byte) (int, error) {
 	sw.data += string(b)
@@ -51,7 +53,6 @@ func TestKanji(t *testing.T) {
 	}
 }
 
-//var kanjiTests = map[string]string {
 var kanjiTests = map[int]struct{key string; val string} {
 
 // ========== ========== ========== ==========
@@ -107,25 +108,34 @@ func _fi(_a int) int64            { return int64(_a) }
 //test specids: 真,假
 3:{`
 package main;入"fmt"
-import "fmt"
+import 吧"fmt"
+import 哪_fg"fmt"
+入㕤hij"fmt"
+入卟"unicode/utf8"
+入叨叩kl"unicode/utf8"
 var n = 50
 变p=70
 变string=170
 功main(){
-  如;真{ //because of bug in Go 1.6 parser in RHS detection, require a ; before using kanji
+  如真{
     fmt.Printf("Len: %d\n", 度("abcdefg") + p)
   }
 }
 func deputy(){
-  if;真{
+  if真{
     fmt.Printf("Len: %d\n", 度("abcdefg") + n)
   }
-  如;假{
-    fmt.Printf("Len: %d\n", 度("hijk") + p)
+  如假{
+    fg.Printf("Len: %d\n", 度("hijk") + p)
   }否{
-    fmt.Printf("Len: %d\n", 度("hi") + p)
+    hij.Printf("Len: %d\n", 度("hi") + p)
   }
-  fmt.Printf("Len: %d\n", len("lmnop") + n)
+  fr,_:= _utf8.DecodeRune([]byte("lmnop"))
+  fmt.Printf("1st rune: %s; Len: %d\n", fr, len("lmnop") + n)
+  让_,_=kl.DecodeRune([]节("lmnop"))
+  㕤Printf("Fifty: %d\n", n)
+  哪Printf("Fifty: %d\n", n)
+  吧Printf("Fifty: %d\n", n)
 }
 `,
 
@@ -134,6 +144,10 @@ func deputy(){
 
 import _fmt "fmt"
 import "fmt"
+import _fg "fmt"
+import _hij "fmt"
+import _utf8 "unicode/utf8"
+import _kl "unicode/utf8"
 
 var n = 50
 var _p = 70
@@ -149,11 +163,16 @@ func deputy() {
 		fmt.Printf("Len: %d\n", len("abcdefg")+n)
 	}
 	if false {
-		_fmt.Printf("Len: %d\n", len("hijk")+_p)
+		_fg.Printf("Len: %d\n", len("hijk")+_p)
 	} else {
-		_fmt.Printf("Len: %d\n", len("hi")+_p)
+		_hij.Printf("Len: %d\n", len("hi")+_p)
 	}
-	fmt.Printf("Len: %d\n", len("lmnop")+n)
+	fr, _ := _utf8.DecodeRune([]byte("lmnop"))
+	fmt.Printf("1st rune: %s; Len: %d\n", fr, len("lmnop")+n)
+	_, _ = _kl.DecodeRune([]byte("lmnop"))
+	_hij.Printf("Fifty: %d\n", n)
+	_fg.Printf("Fifty: %d\n", n)
+	fmt.Printf("Fifty: %d\n", n)
 }
 `},
 
@@ -210,11 +229,20 @@ const b = 2.72
 5:{`
 package main;入"fmt"
 import "fmt"
+type _byte byte
+type _rune rune
 var (
 	_a= 图[字]节{'a': 127, 'b': 0, '7':7}
-	b = byte(7)
-	c= 图[字]节{'a': b} //FIX: want b to become _b
-	d= []节{127, b, 0} //FIX: want d to become _d
+	_b= byte(7)
+	c= 图[字]节{'a': b}
+	cc= map[rune]byte{'a': _b}
+	d= []节{127, b, 0}
+	dd= [3]节{127, b, 0}
+	e= 图[byte]rune{byte(b):'a'}
+	_f= 7
+	g= 构{a串;b整}{"abc",f} //TODO: why does this work, i.e. f become _f ?
+	h= 功(a串)串{a="def"; return a}
+	i 面{doIt(a串)串}
 )
 func main(){
 	_zx:为i:=0;i<19;i++{
@@ -239,11 +267,26 @@ func main(){
 import _fmt "fmt"
 import "fmt"
 
+type _byte byte
+type _rune rune
+
 var (
 	_a = map[rune]byte{'a': 127, 'b': 0, '7': 7}
-	b  = byte(7)
-	c  = map[rune]byte{'a': b}
-	d  = []byte{127, b, 0}
+	_b = byte(7)
+	c  = map[rune]byte{'a': _b}
+	cc = map[rune]byte{'a': _b}
+	d  = []byte{127, _b, 0}
+	dd = [3]byte{127, _b, 0}
+	e  = map[_byte]_rune{_byte(_b): 'a'}
+	_f = 7
+	g  = struct {
+		_a string
+		_b int
+	}{"abc", _f}
+	h = func(_a string) string { _a = "def"; return _a }
+	i interface {
+		_doIt(_a string) string
+	}
 )
 
 func main() {
@@ -563,10 +606,14 @@ var dst string = "package main"
 9:{`
 package main;入"fmt"
 import "fmt"
+const a=6
 功main(){
   让b:=7
   让func:=8
   fmt.Printf("Hi, nos.%s and %s!\n", b, func)
+  英{
+    fmt.Printf("Hi, no. %s.\n", a)
+  }
 }
 func baba(){
   变b任= 17
@@ -579,10 +626,15 @@ func baba(){
 import _fmt "fmt"
 import "fmt"
 
+const a = 6
+
 func _main() {
 	_b := 7
 	_func := 8
 	_fmt.Printf("Hi, nos.%s and %s!\n", _b, _func)
+	{
+		fmt.Printf("Hi, no. %s.\n", a)
+	}
 }
 func baba() {
 	var _b interface{} = 17
@@ -619,8 +671,14 @@ func main() {
 	b:= 真
 	nil:= true
 	iota:= 真
-	//假:= true //this generates parse error "expected non-kanji special identifier on left hand side"
+	//假:= true //parse error
 	形Printf("a: %v, b: %v, nil: %v, iota: %v\n", a, b, nil, iota)
+
+	变abc图[串]整;
+	abc[串("def")]=789
+
+	var _z= "abc"
+	形Println(串(z))
 }
 `,
 
@@ -636,7 +694,55 @@ func main() {
 	iota := true
 
 	fmt.Printf("a: %v, b: %v, nil: %v, iota: %v\n", a, b, nil, iota)
+
+	var abc map[string]int
+	abc[string("def")] = 789
+
+	var _z = "abc"
+	fmt.Println(string(_z))
 }
+`},
+
+// ========== ========== ========== ==========
+12:{`
+package main
+type A int
+func main(){
+  _a:=123
+  形Println(整64(a))
+  var b A
+  var c这A
+  形Println(b, c)
+}
+`,
+
+// ---------- ---------- ---------- ----------
+`package main
+
+import fmt "fmt"
+
+type A int
+
+func main() {
+	_a := 123
+	fmt.Println(int64(_a))
+	var b A
+	var c A
+	fmt.Println(b, c)
+}
+`},
+
+// ========== ========== ========== ==========
+13:{`包正;种A整;功正(){a:=123;形Println(整64(a));变b这A;变c这A;形Println(b,c)}`, //example of totally spaceless code
+
+// ---------- ---------- ---------- ----------
+`package main
+
+import fmt "fmt"
+
+type A int
+
+func main() { _a := 123; fmt.Println(int64(_a)); var _b A; var _c A; fmt.Println(_b, _c) }
 `},
 
 // ========== ========== ========== ==========
@@ -650,19 +756,84 @@ package main
 
 // ========== ========== ========== ==========
 }
+
+//================================================================================================================================================================
+func TestKanjiParseError(t *testing.T) {
+	for i, tst:= range kanjiParseErrorTests {
+		src:= tst.key
+		dse:= tst.val
+		fset := token.NewFileSet()
+		/*defer func(){
+			if x:= recover(); fmt.Sprintf("%v", x) != msg {
+				tt.Errorf("assert %d failed.\n" +
+					"....found recover:%v\n" +
+					"...expected panic:%v\n", i, fmt.Sprintf("%v", x), msg)
+			}
+		}*/
+
+		_, err := parser.ParseFile(fset, "", src, 0)
+		if fmt.Sprintf("%v", err) != dse {
+			t.Errorf("unexpected parse error in %d: received error: %q; expected error: %q", i, err, dse)
+		}
+	}
+}
+
+var kanjiParseErrorTests = map[int]struct{key string; val string} {
+
+// ========== ========== ========== ==========
+1001:{`
+package main
+func main() {
+	//a:= true
+	//b:= 真
+	//nil:= true
+	//iota:= 真
+	假:= true //this generates parse error "non-kanji special identifier on left hand side"
+}
+`,
+
+// ---------- ---------- ---------- ----------
+`8:5: non-kanji special identifier 假 on left hand side (and 1 more errors)`},
+
+// ========== ========== ========== ==========
+1002:{`
+package main
+func main() {
+	串["def"]=789
+}
+`,
+
+// ---------- ---------- ---------- ----------
+`4:12: non-kanji special identifier 串 on left hand side (and 1 more errors)`},
+
+// ========== ========== ========== ==========
+1999:{`
+package
+`,
+
+// ---------- ---------- ---------- ----------
+`2:9: expected 'IDENT', found 'EOF'`},
+
+// ========== ========== ========== ==========
+}
+
+//================================================================================================================================================================
 /*
-more tests: 让做任
-more keyword scoping tests: 包
-test more default packages: 数,大,网,序
-to test keyword scoping: 为,终,回,破,继,跳,构
-fix keyword scoping: 图,slices
-convert to specid scoping: all except 真,假,空,毫
-to test specids: 能,实,虚,造,新,关,加,副,删,丢,抓,写,线,毫,镇,错
+restrict kanji in decl/import idents
 fix error where pre-existing imports aren't re-added with different name
-test keywords as labels in kanji-context
-test blank: _
-pseudo-keywords: 这 for curr pkg
-enable backslashed kanji in identifiers, and use 我
-put in kanji on imports, and on declared packages, and use 特
+Why is keyword scoping of struct values working?
+
+test keyword scoping: 为,终,回,破,继,跳,构
+test specids: 能,实,虚,造,新,关,加,副,删,丢,抓,写,线,毫,镇,错
+
+more tests:
+  让做任英这
+  non-kanji on lhs
+  keyword scoping: 包
+  specid scoping: all except 真,假,空,毫
+  default packages: 数,大,网,序
+  keywords as labels in kanji-context
+  blank: _
+  lhs 口 radical kanji on imports
 */
 
