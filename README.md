@@ -1,4 +1,4 @@
-# qu
+# qu has been superceded by the code at github.com/grolang
 
 A command `qufmt` and associated packages to format Qu source code into Go code. The syntax of Qu code is a derivative of Go's syntax, using Kanji for keywords, special identifiers, and common package names, with the aim of eliminating the need for all whitespace in source code.
 
